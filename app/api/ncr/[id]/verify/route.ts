@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createNotification, notifyManagers } from '@/lib/notifications'
+import { createNotification, createNotifications } from '@/lib/notifications'
+import { canApproveQualityRecord } from '@/lib/roles'
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const supabase = createClient()
@@ -8,13 +9,17 @@ export async function POST(request: Request, { params }: { params: { id: string 
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'qa_manager') return NextResponse.json({ error: 'Chỉ Quản lý QA mới có thể xác nhận' }, { status: 403 })
+  if (!canApproveQualityRecord(profile?.role)) return NextResponse.json({ error: 'Không có quyền xác nhận' }, { status: 403 })
 
-  const { data: ncr } = await supabase.from('ncrs').select('*').eq('id', params.id).single()
+  const { data: ncr } = await supabase
+    .from('ncrs')
+    .select('status, ncr_code, raised_by, assigned_to')
+    .eq('id', params.id)
+    .single()
   if (!ncr) return NextResponse.json({ error: 'Không tìm thấy NCR' }, { status: 404 })
   if (ncr.status !== 'pending_verification') return NextResponse.json({ error: 'NCR không ở trạng thái chờ xác nhận' }, { status: 400 })
 
-  const { effective, notes } = await request.json()
+  const { effective, notes } = await request.json().catch(() => ({}))
 
   if (effective) {
     // Phase 1: go straight to completed (no process change check yet)
@@ -35,13 +40,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     // Notify all involved parties
     const involvedIds = Array.from(new Set([ncr.raised_by, ncr.assigned_to].filter(Boolean)))
-    for (const uid of involvedIds) {
-      await createNotification(supabase, uid,
-        'NCR đã hoàn thành',
-        `${ncr.ncr_code} đã được xác nhận hiệu quả và đóng lại`,
-        `/ncr/${params.id}`
-      )
-    }
+    await createNotifications(
+      involvedIds,
+      'NCR đã hoàn thành',
+      `${ncr.ncr_code} đã được xác nhận hiệu quả và đóng lại`,
+      `/ncr/${params.id}`
+    )
   } else {
     // Not effective — bounce back to analysing
     const { error } = await supabase.from('ncrs').update({

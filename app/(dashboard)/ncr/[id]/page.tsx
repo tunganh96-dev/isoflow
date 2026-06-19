@@ -35,13 +35,13 @@ export default async function NcrDetailPage({ params }: { params: { id: string }
   const { data: qaUsers } = await supabase
     .from('users')
     .select('id, full_name, role')
-    .in('role', ['qa_employee', 'qa_manager'])
+    .in('role', ['super_admin', 'coo', 'factory_admin', 'department_head', 'employee'])
 
   const colLabel = NCR_COLUMNS.find(c => c.status === ncr.status)?.label ?? ncr.status
   const overdue = isOverdue(ncr.due_date) && ncr.status !== 'completed'
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-2xl mx-auto">
       {/* Header */}
       <div className="flex items-start gap-3 mb-5">
         <Link href="/ncr" className="text-gray-400 hover:text-gray-600 mt-0.5"><ChevronLeft size={20} /></Link>
@@ -83,7 +83,7 @@ export default async function NcrDetailPage({ params }: { params: { id: string }
           <p className="font-medium">{ncr.reporter_name ?? '—'}</p>
         </div>
         <div>
-          <p className="text-xs text-gray-400 mb-0.5">Người tạo NCR</p>
+          <p className="text-xs text-gray-400 mb-0.5">Người tạo</p>
           <p className="font-medium flex items-center gap-1"><User size={13} />{(ncr.raiser as any)?.full_name ?? '—'}</p>
         </div>
         {ncr.assignee && (
@@ -142,7 +142,7 @@ export default async function NcrDetailPage({ params }: { params: { id: string }
       {/* Closure report */}
       {ncr.closure_report && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-5 mb-4">
-          <h3 className="text-sm font-semibold text-green-800 mb-2">Báo cáo đóng NCR</h3>
+          <h3 className="text-sm font-semibold text-green-800 mb-2">Báo cáo đóng vấn đề</h3>
           <p className="text-sm text-green-900 whitespace-pre-wrap">{ncr.closure_report}</p>
           {ncr.closure_approver && (
             <p className="text-xs text-green-600 mt-3">✓ Phê duyệt bởi {(ncr.closure_approver as any).full_name}</p>

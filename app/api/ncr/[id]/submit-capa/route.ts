@@ -7,12 +7,16 @@ export async function POST(request: Request, { params }: { params: { id: string 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: ncr } = await supabase.from('ncrs').select('*').eq('id', params.id).single()
+  const { data: ncr } = await supabase
+    .from('ncrs')
+    .select('id, ncr_code, status, assigned_to, factory_id')
+    .eq('id', params.id)
+    .single()
   if (!ncr) return NextResponse.json({ error: 'Không tìm thấy NCR' }, { status: 404 })
   if (ncr.status !== 'analysing') return NextResponse.json({ error: 'NCR không ở trạng thái phân tích' }, { status: 400 })
   if (ncr.assigned_to !== user.id) return NextResponse.json({ error: 'Chỉ người được phân công mới có thể điền phân tích' }, { status: 403 })
 
-  const { root_cause_analysis, proposed_capa } = await request.json()
+  const { root_cause_analysis, proposed_capa } = await request.json().catch(() => ({}))
   if (!root_cause_analysis?.trim() || !proposed_capa?.trim()) {
     return NextResponse.json({ error: 'Vui lòng điền đầy đủ phân tích nguyên nhân và đề xuất CAPA' }, { status: 400 })
   }
@@ -32,7 +36,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
   await notifyManagers(supabase,
     'Nguyên nhân NCR đã được gửi',
     `${ncr.ncr_code} chờ phê duyệt CAPA`,
-    `/ncr/${params.id}`
+    `/ncr/${params.id}`,
+    ncr.factory_id
   )
 
   return NextResponse.json({ success: true })

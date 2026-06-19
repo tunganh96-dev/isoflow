@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { ANTHROPIC_MODEL } from '@/lib/anthropic'
 
 const client = new Anthropic()
 
@@ -9,12 +10,12 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { content } = await request.json()
+  const { content } = await request.json().catch(() => ({}))
   if (!content) return NextResponse.json({ error: 'Thiếu nội dung' }, { status: 400 })
 
   try {
     const msg = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: ANTHROPIC_MODEL,
       max_tokens: 500,
       system: `Bạn là chuyên gia ISO 9001. Từ các bước quy trình dưới đây, hãy tạo Mermaid flowchart diagram code.
 Sử dụng: flowchart TD
@@ -30,7 +31,7 @@ Trả lời bằng tiếng Việt có đầy đủ dấu.`,
 
     return NextResponse.json({ mermaid_code })
   } catch (err) {
-    console.error('Flowchart generation error:', err)
+    console.error('Flowchart generation error:')
     return NextResponse.json({ error: 'Không thể tạo sơ đồ. Vui lòng thử lại.' }, { status: 500 })
   }
 }

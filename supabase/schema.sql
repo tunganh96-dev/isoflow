@@ -26,7 +26,7 @@ create table if not exists users (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
   email text not null unique,
-  role text not null check (role in ('qa_employee','qa_manager','staff')),
+  role text not null check (role in ('super_admin','coo','factory_admin','department_head','employee')),
   factory_id uuid references factories(id),
   department_id uuid references departments(id),
   created_at timestamptz default now()
@@ -35,7 +35,7 @@ create table if not exists users (
 -- Documents
 create table if not exists documents (
   id uuid primary key default gen_random_uuid(),
-  doc_code text not null unique,
+  doc_code text not null,
   title text not null,
   doc_type text not null check (doc_type in (
     'sop','work_instruction','quality_policy',
@@ -48,17 +48,31 @@ create table if not exists documents (
     'draft','pending_approval','published','under_review','archived'
   )),
   factory_id uuid references factories(id),
+  department_id uuid references departments(id),
   parent_doc_id uuid references documents(id),
   is_addendum boolean default false,
   owner_id uuid references users(id),
   approved_by uuid references users(id),
   approved_at timestamptz,
   revision_type text check (revision_type in ('minor','major')),
+  revision_summary text,
+  previous_version_id uuid references documents(id),
   review_date date,
   source_file_url text,
+  flowchart_image_path text,
+  flowchart_image_mime text,
+  process_importance text not null default 'medium' check (process_importance in ('high', 'medium', 'low')),
+  process_importance_level integer not null default 3 check (process_importance_level between 1 and 5),
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+create unique index if not exists idx_documents_doc_code_version_unique
+  on documents (doc_code, version);
+create index if not exists idx_documents_status_updated_at
+  on documents (status, updated_at desc);
+create index if not exists idx_documents_doc_code_version
+  on documents (doc_code, version desc);
 
 -- Document assignments
 create table if not exists document_assignments (
@@ -69,6 +83,43 @@ create table if not exists document_assignments (
   assigned_by uuid references users(id),
   assigned_at timestamptz default now()
 );
+create index if not exists idx_document_assignments_document_id
+  on document_assignments (document_id);
+create index if not exists idx_document_assignments_department_id
+  on document_assignments (department_id);
+
+-- Reusable forms, records and supporting documents linked to processes
+create table if not exists document_resources (
+  id uuid primary key default gen_random_uuid(),
+  resource_code text not null unique,
+  name text not null,
+  description text not null,
+  resource_type text not null default 'form' check (resource_type in ('form', 'record', 'reference', 'other')),
+  department_id uuid references departments(id),
+  retention_period text,
+  file_path text not null,
+  file_name text not null,
+  mime_type text,
+  file_size bigint,
+  uploaded_by uuid references users(id),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists document_resource_links (
+  document_id uuid references documents(id) on delete cascade,
+  resource_id uuid references document_resources(id) on delete cascade,
+  linked_by uuid references users(id),
+  linked_at timestamptz default now(),
+  primary key (document_id, resource_id)
+);
+
+create index if not exists idx_document_resources_created_at
+  on document_resources (created_at desc);
+create index if not exists idx_document_resources_department_id
+  on document_resources (department_id);
+create index if not exists idx_document_resource_links_resource_id
+  on document_resource_links (resource_id);
 
 -- NCRs
 create table if not exists ncrs (
@@ -107,6 +158,8 @@ create table if not exists ncrs (
   raised_at timestamptz default now(),
   closed_at timestamptz
 );
+create index if not exists idx_ncrs_status_raised_at
+  on ncrs (status, raised_at desc);
 
 -- NCR activity log
 create table if not exists ncr_activity (
@@ -117,6 +170,8 @@ create table if not exists ncr_activity (
   notes text,
   created_at timestamptz default now()
 );
+create index if not exists idx_ncr_activity_ncr_created_at
+  on ncr_activity (ncr_id, created_at desc);
 
 -- Notifications
 create table if not exists notifications (
@@ -128,6 +183,8 @@ create table if not exists notifications (
   read boolean default false,
   created_at timestamptz default now()
 );
+create index if not exists idx_notifications_user_created_at
+  on notifications (user_id, created_at desc);
 
 -- ============================================================
 -- Auto-update updated_at on documents
@@ -152,6 +209,8 @@ alter table departments enable row level security;
 alter table users enable row level security;
 alter table documents enable row level security;
 alter table document_assignments enable row level security;
+alter table document_resources enable row level security;
+alter table document_resource_links enable row level security;
 alter table ncrs enable row level security;
 alter table ncr_activity enable row level security;
 alter table notifications enable row level security;
@@ -164,37 +223,164 @@ create policy "factories_read" on factories
 create policy "departments_read" on departments
   for select using (auth.uid() is not null);
 
--- Users: users can read own row; qa_manager reads all
+-- Helper functions to avoid infinite recursion in users RLS
+create or replace function public.is_admin_user()
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from users
+    where id = auth.uid()
+    and role in ('super_admin','coo','factory_admin')
+  );
+$$;
+
+create or replace function public.can_create_quality_record()
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from users
+    where id = auth.uid()
+    and role in ('super_admin','coo','factory_admin','department_head')
+  );
+$$;
+
+-- Users: users can read own row; admins read all
 create policy "users_read" on users
   for select using (
     id = auth.uid()
-    or exists (select 1 from users where id = auth.uid() and role = 'qa_manager')
+    or public.is_admin_user()
   );
 
 create policy "users_insert_own" on users
   for insert with check (id = auth.uid());
 
--- Documents: master docs visible to all; factory docs scoped by factory
+-- Published documents are visible to assigned departments. Documents without
+-- department assignments apply company-wide.
 create policy "documents_read" on documents
   for select using (
-    exists (select 1 from users where id = auth.uid() and role = 'qa_manager')
-    or factory_id is null
-    or factory_id = (select factory_id from users where id = auth.uid())
+    public.is_admin_user()
+    or owner_id = auth.uid()
+    or (
+      status = 'published'
+      and (
+        not exists (
+          select 1 from document_assignments da
+          where da.document_id = documents.id
+        )
+        or exists (
+          select 1
+          from document_assignments da
+          join users u on u.id = auth.uid()
+          where da.document_id = documents.id
+            and da.department_id = u.department_id
+        )
+      )
+    )
+    or exists (
+      select 1
+      from document_assignments da
+      join users u on u.id = auth.uid()
+      where da.document_id = documents.id
+        and u.role = 'department_head'
+        and da.department_id = u.department_id
+    )
   );
 
 create policy "documents_insert" on documents
   for insert with check (
-    exists (select 1 from users where id = auth.uid() and role in ('qa_employee','qa_manager'))
+    public.can_create_quality_record()
   );
 
 create policy "documents_update" on documents
   for update using (
-    exists (select 1 from users where id = auth.uid() and role = 'qa_manager')
+    public.is_admin_user()
     or (
-      owner_id = auth.uid()
-      and status = 'draft'
+      status = 'draft'
+      and (
+        owner_id = auth.uid()
+        or exists (
+          select 1
+          from document_assignments da
+          join users u on u.id = auth.uid()
+          where da.document_id = documents.id
+            and u.role = 'department_head'
+            and da.department_id = u.department_id
+        )
+      )
+    )
+  )
+  with check (
+    public.is_admin_user()
+    or (
+      status in ('draft', 'pending_approval')
+      and (
+        owner_id = auth.uid()
+        or exists (
+          select 1
+          from document_assignments da
+          join users u on u.id = auth.uid()
+          where da.document_id = documents.id
+            and u.role = 'department_head'
+            and da.department_id = u.department_id
+        )
+      )
     )
   );
+
+create policy "documents_delete_draft" on documents
+  for delete using (
+    status = 'draft'
+    and (
+      public.is_admin_user()
+      or owner_id = auth.uid()
+      or exists (
+        select 1
+        from document_assignments da
+        join users u on u.id = auth.uid()
+        where da.document_id = documents.id
+          and u.role = 'department_head'
+          and da.department_id = u.department_id
+      )
+    )
+  );
+
+create table if not exists iso_checklist_instances (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  checklist_date date not null,
+  job_position_id uuid references job_positions(id) on delete set null,
+  factory_id uuid references factories(id) on delete set null,
+  department_id uuid references departments(id) on delete set null,
+  checklist_type text not null check (checklist_type in ('sop_verification', 'manager_confirmation')),
+  questions jsonb not null default '[]'::jsonb,
+  responses jsonb not null default '{}'::jsonb,
+  status text not null default 'not_started' check (status in ('not_started', 'in_progress', 'submitted')),
+  late_reason text,
+  submitted_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, checklist_date)
+);
+
+create index if not exists idx_iso_checklist_instances_user_date
+  on iso_checklist_instances (user_id, checklist_date desc);
+create index if not exists idx_iso_checklist_instances_department_date
+  on iso_checklist_instances (department_id, checklist_date desc);
+create index if not exists idx_iso_checklist_instances_factory_date
+  on iso_checklist_instances (factory_id, checklist_date desc);
+
+alter table iso_checklist_instances enable row level security;
+create policy "iso_checklist_instances_read_own" on iso_checklist_instances
+  for select using (user_id = auth.uid());
+create policy "iso_checklist_instances_update_own" on iso_checklist_instances
+  for update using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 -- Document assignments: all authenticated users can read
 create policy "doc_assignments_read" on document_assignments
@@ -202,24 +388,39 @@ create policy "doc_assignments_read" on document_assignments
 
 create policy "doc_assignments_insert" on document_assignments
   for insert with check (
-    exists (select 1 from users where id = auth.uid() and role = 'qa_manager')
+    public.can_create_quality_record()
   );
+create policy "doc_assignments_delete" on document_assignments
+  for delete using (public.can_create_quality_record());
+
+create policy "document_resources_read" on document_resources
+  for select using (auth.uid() is not null);
+create policy "document_resources_insert" on document_resources
+  for insert with check (public.can_create_quality_record());
+create policy "document_resources_update" on document_resources
+  for update using (public.can_create_quality_record());
+create policy "document_resource_links_read" on document_resource_links
+  for select using (auth.uid() is not null);
+create policy "document_resource_links_insert" on document_resource_links
+  for insert with check (public.can_create_quality_record());
+create policy "document_resource_links_delete" on document_resource_links
+  for delete using (public.can_create_quality_record());
 
 -- NCRs: scoped by factory
 create policy "ncrs_read" on ncrs
   for select using (
-    exists (select 1 from users where id = auth.uid() and role = 'qa_manager')
+    public.is_admin_user()
     or factory_id = (select factory_id from users where id = auth.uid())
   );
 
 create policy "ncrs_insert" on ncrs
   for insert with check (
-    exists (select 1 from users where id = auth.uid() and role in ('qa_employee','qa_manager'))
+    public.can_create_quality_record()
   );
 
 create policy "ncrs_update" on ncrs
   for update using (
-    exists (select 1 from users where id = auth.uid() and role = 'qa_manager')
+    public.is_admin_user()
     or factory_id = (select factory_id from users where id = auth.uid())
   );
 
@@ -230,7 +431,7 @@ create policy "ncr_activity_read" on ncr_activity
       select 1 from ncrs n
       join users u on u.id = auth.uid()
       where n.id = ncr_id
-      and (u.role = 'qa_manager' or n.factory_id = u.factory_id)
+      and (u.role in ('super_admin','coo','factory_admin') or n.factory_id = u.factory_id)
     )
   );
 

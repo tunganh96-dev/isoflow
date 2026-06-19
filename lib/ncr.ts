@@ -21,6 +21,24 @@ export const SEVERITY_COLORS: Record<string, string> = {
   critical: 'bg-red-100 text-red-700',
 }
 
+export const STATUS_LABELS: Record<string, string> = {
+  open:                   'Mới mở',
+  analysing:              'Phân tích & CAPA',
+  pending_capa_approval:  'Chờ duyệt CAPA',
+  implementing:           'Đang thực hiện',
+  pending_verification:   'Chờ xác nhận',
+  completed:              'Hoàn thành',
+}
+
+export const STATUS_COLORS: Record<string, string> = {
+  open:                   'bg-gray-100 text-gray-700',
+  analysing:              'bg-blue-100 text-blue-700',
+  pending_capa_approval:  'bg-yellow-100 text-yellow-700',
+  implementing:           'bg-purple-100 text-purple-700',
+  pending_verification:   'bg-orange-100 text-orange-700',
+  completed:              'bg-green-100 text-green-700',
+}
+
 export const ISO_CLAUSES = [
   '4.1 – Bối cảnh tổ chức',
   '4.2 – Các bên quan tâm',

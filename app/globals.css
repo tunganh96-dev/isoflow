@@ -3,21 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
+  --background: #F7F6F3;
   --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-geist-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans);
+  min-height: 100dvh;
 }
 
 @layer utilities {
@@ -28,18 +23,144 @@ body {
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors;
+    @apply inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white px-4 py-2.5 rounded-lg text-base font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors min-h-[44px];
   }
   .btn-success {
-    @apply inline-flex items-center gap-1.5 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors;
+    @apply inline-flex items-center justify-center gap-1.5 bg-green-600 text-white px-4 py-2.5 rounded-lg text-base font-medium hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px];
   }
   .btn-danger {
-    @apply inline-flex items-center gap-1.5 bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors;
+    @apply inline-flex items-center justify-center gap-1.5 bg-red-600 text-white px-4 py-2.5 rounded-lg text-base font-medium hover:bg-red-700 disabled:opacity-50 transition-colors min-h-[44px];
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-1.5 border border-gray-200 bg-white text-gray-700 px-4 py-2.5 rounded-lg text-base font-medium hover:border-gray-300 hover:bg-gray-50 disabled:opacity-50 transition-colors min-h-[44px];
   }
   .label {
-    @apply block text-sm font-medium text-gray-700 mb-1;
+    @apply block text-base font-medium text-gray-700 mb-1;
   }
   .input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500;
+    @apply w-full min-h-[44px] px-3 py-2 border border-gray-300 rounded-lg text-base text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500;
   }
+}
+
+/* Kanban horizontal scroll */
+.kanban-scroll-x {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #e5e7eb;
+}
+.kanban-scroll-x::-webkit-scrollbar { height: 12px; }
+.kanban-scroll-x::-webkit-scrollbar-track { background: #e5e7eb; border-radius: 999px; }
+.kanban-scroll-x::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border: 3px solid #e5e7eb;
+  border-radius: 999px;
+}
+.kanban-scroll-x::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+.ai-chat-markdown {
+  color: #374151 !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+}
+
+.ai-chat-markdown h1,
+.ai-chat-markdown h2 {
+  border-bottom: 1px solid #e5e7eb !important;
+  color: #111827 !important;
+  font-size: 14px !important;
+  line-height: 1.35 !important;
+  margin: 12px 0 8px !important;
+  padding-bottom: 5px !important;
+}
+
+.ai-chat-markdown h1:first-child,
+.ai-chat-markdown h2:first-child {
+  margin-top: 0 !important;
+}
+
+.ai-chat-markdown h3 {
+  color: #1f2937 !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+  margin: 10px 0 5px !important;
+}
+
+.ai-chat-markdown p,
+.ai-chat-markdown ul,
+.ai-chat-markdown ol {
+  margin: 5px 0 !important;
+}
+
+.ai-chat-markdown hr {
+  border-color: #e5e7eb !important;
+  margin: 10px 0 !important;
+}
+
+.document-markdown {
+  max-width: none !important;
+  color: #374151;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.document-markdown h1,
+.document-markdown h2,
+.document-markdown h3,
+.document-markdown h4,
+.document-markdown h5,
+.document-markdown h6 {
+  color: #111827;
+  font-weight: 700;
+  margin: 1.4em 0 0.6em;
+}
+
+.document-markdown h1 { font-size: 1.5rem; }
+.document-markdown h2 { border-bottom: 1px solid #e5e7eb; font-size: 1.25rem; padding-bottom: 0.35rem; }
+.document-markdown h3 { font-size: 1.1rem; }
+.document-markdown p,
+.document-markdown ul,
+.document-markdown ol { margin: 0.75rem 0; }
+.document-markdown ul,
+.wmde-markdown ul {
+  list-style-type: "- ";
+  padding-left: 1.5rem;
+}
+.document-markdown ol { list-style: decimal; padding-left: 1.5rem; }
+.document-markdown strong { color: #1f2937; font-weight: 700; }
+.document-markdown blockquote {
+  border-left: 3px solid #cbd5e1;
+  color: #64748b;
+  margin: 1rem 0;
+  padding-left: 1rem;
+}
+.document-markdown code {
+  background: #f3f4f6;
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+}
+.document-markdown pre {
+  background: #f3f4f6;
+  border-radius: 6px;
+  overflow-x: auto;
+  padding: 1rem;
+}
+
+.document-markdown table {
+  border-collapse: collapse;
+  display: table !important;
+  margin: 1rem 0;
+  width: 100% !important;
+}
+
+.document-markdown th,
+.document-markdown td {
+  border: 1px solid #d1d5db;
+  padding: 0.55rem 0.65rem;
+  vertical-align: top !important;
+}
+
+.document-markdown th {
+  background: #f9fafb;
+  color: #374151;
+  font-weight: 600;
+  text-align: left;
 }

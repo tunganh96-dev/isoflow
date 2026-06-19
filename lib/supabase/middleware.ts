@@ -31,8 +31,10 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // Redirect unauthenticated users to login (except on auth pages)
-  if (!user && !pathname.startsWith('/login') && !pathname.startsWith('/auth')) {
+  const isApiRoute = pathname.startsWith('/api/')
+
+  // API handlers return their own JSON 401 responses.
+  if (!user && !isApiRoute && !pathname.startsWith('/login') && !pathname.startsWith('/auth')) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
@@ -40,9 +42,34 @@ export async function updateSession(request: NextRequest) {
 
   // Redirect authenticated users away from login
   if (user && pathname.startsWith('/login')) {
+    const { data: profile } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    url.pathname = profile?.role === 'employee' ? '/checklists' : '/dashboard'
     return NextResponse.redirect(url)
+  }
+
+  // Force password change check
+  if (user && !isApiRoute && !pathname.startsWith('/login') && !pathname.startsWith('/auth') && !pathname.startsWith('/change-password')) {
+    const { data: profile } = await supabase
+      .from('users')
+      .select('password_changed_at, force_password_change')
+      .eq('id', user.id)
+      .single()
+
+    if (profile) {
+      const mustChange = profile.force_password_change
+        || !profile.password_changed_at
+        || (Date.now() - new Date(profile.password_changed_at).getTime() > 180 * 24 * 60 * 60 * 1000) // 6 months
+      if (mustChange) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/change-password'
+        return NextResponse.redirect(url)
+      }
+    }
   }
 
   return supabaseResponse

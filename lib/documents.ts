@@ -49,25 +49,24 @@ export async function generateDocCode(
 
   if (!factoryCode) {
     // Master doc: QT-001
-    const seq = await getNextSeq(supabase, `${typeCode}-`, false)
+    const seq = await getNextSeq(supabase, `${typeCode}-`)
     return `${typeCode}-${seq.toString().padStart(3, '0')}`
   }
 
   if (isAddendum) {
     // Addendum: QT-QVO-001-ADD
-    const seq = await getNextSeq(supabase, `${typeCode}-${factoryCode}-`, true)
+    const seq = await getNextSeq(supabase, `${typeCode}-${factoryCode}-`)
     return `${typeCode}-${factoryCode}-${seq.toString().padStart(3, '0')}-ADD`
   }
 
   // Factory doc: QT-QVO-001
-  const seq = await getNextSeq(supabase, `${typeCode}-${factoryCode}-`, false)
+  const seq = await getNextSeq(supabase, `${typeCode}-${factoryCode}-`)
   return `${typeCode}-${factoryCode}-${seq.toString().padStart(3, '0')}`
 }
 
 async function getNextSeq(
   supabase: SupabaseClient,
-  prefix: string,
-  isAddendum: boolean
+  prefix: string
 ): Promise<number> {
   const { data } = await supabase
     .from('documents')

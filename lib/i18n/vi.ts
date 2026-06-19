@@ -28,13 +28,15 @@ export const vi = {
   // Nav
   nav_dashboard: 'Bảng điều khiển',
   nav_documents: 'Tài liệu',
-  nav_ncr: 'NCR & CAPA',
+  nav_ncr: 'Vấn đề',
   nav_notifications: 'Thông báo',
 
   // Roles
-  role_qa_employee: 'Nhân viên QA',
-  role_qa_manager: 'Quản lý QA',
-  role_staff: 'Nhân viên',
+  role_super_admin: 'Super Admin',
+  role_coo: 'COO',
+  role_factory_admin: 'Quản lý nhà máy',
+  role_department_head: 'Trưởng bộ phận',
+  role_employee: 'Nhân viên',
 
   // Factories
   factory_qvo: 'Quế Võ',
@@ -129,6 +131,8 @@ export const vi = {
   // Errors
   error_required: 'Trường này là bắt buộc',
   error_generic: 'Đã xảy ra lỗi. Vui lòng thử lại.',
+  error_generic_short: 'Đã xảy ra lỗi',
+  error_connection: 'Lỗi kết nối. Vui lòng thử lại.',
   error_unauthorized: 'Bạn không có quyền thực hiện thao tác này.',
   error_not_found: 'Không tìm thấy dữ liệu.',
 } as const

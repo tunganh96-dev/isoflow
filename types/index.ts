@@ -1,4 +1,4 @@
-export type UserRole = 'qa_employee' | 'qa_manager' | 'staff'
+export type UserRole = 'super_admin' | 'coo' | 'factory_admin' | 'department_head' | 'employee'
 
 export type DocType =
   | 'sop'
@@ -50,6 +50,9 @@ export interface AppUser {
   role: UserRole
   factory_id: string | null
   department_id: string | null
+  job_position_id: string | null
+  password_changed_at: string | null
+  force_password_change: boolean
   created_at: string
 }
 
@@ -63,16 +66,65 @@ export interface Document {
   version: number
   status: DocStatus
   factory_id: string | null
+  department_id: string | null
   parent_doc_id: string | null
   is_addendum: boolean
   owner_id: string
   approved_by: string | null
   approved_at: string | null
   revision_type: 'minor' | 'major' | null
+  revision_summary: string | null
+  previous_version_id: string | null
   review_date: string | null
   source_file_url: string | null
+  process_importance: 'high' | 'medium' | 'low'
+  process_importance_level: number
   created_at: string
   updated_at: string
+}
+
+export interface SummaryCard {
+  purpose: string
+  responsibilities: string[]
+  critical_steps: string[]
+  hard_rules: string[]
+  required_records: string[]
+}
+
+export interface QuizQuestion {
+  question: string
+  options: string[]
+  correct_answer: number
+  explanation: string
+}
+
+export interface AuditChecklistItem {
+  item: string
+  check_method: string
+  pass_criteria: string
+  fail_criteria: string
+}
+
+export type ControlFrequency = 'daily' | 'weekly' | 'monthly'
+export type CrossAuditFrequency = 'none' | 'monthly' | 'quarterly'
+
+export interface ControlChecklistItem {
+  item: string
+  instruction: string
+}
+
+export interface ControlChecklist {
+  frequency: ControlFrequency
+  items: ControlChecklistItem[]
+}
+
+export interface DocumentLearningAssets {
+  summary_card: SummaryCard
+  quiz: QuizQuestion[]
+  worker_verification: ControlChecklist
+  manager_confirmation: ControlChecklist
+  cross_audit_frequency: CrossAuditFrequency
+  audit_checklist: AuditChecklistItem[]
 }
 
 export interface Ncr {

@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, UserPlus, Send, CheckCircle, XCircle, Upload, FileText, Stamp } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
-import type { AppUser } from '@/types'
+import type { AppUser, Ncr } from '@/types'
+import { canApproveQualityRecord } from '@/lib/roles'
+import { vi } from '@/lib/i18n/vi'
 
 interface Props {
-  ncr: any
+  ncr: Ncr
   user: AppUser
   qaUsers: { id: string; full_name: string; role: string }[]
 }
@@ -28,7 +29,7 @@ export default function NcrActions({ ncr, user, qaUsers }: Props) {
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([])
   const [verifyNotes, setVerifyNotes] = useState('')
 
-  const isManager = user.role === 'qa_manager'
+  const isManager = canApproveQualityRecord(user.role)
   const isAssignee = ncr.assigned_to === user.id
 
   async function post(path: string, body?: object) {
@@ -40,17 +41,22 @@ export default function NcrActions({ ncr, user, qaUsers }: Props) {
     })
     const data = await res.json()
     setLoading(false)
-    if (!res.ok) { setError(data.error ?? 'Đã xảy ra lỗi'); return false }
+    if (!res.ok) { setError(data.error ?? vi.error_generic_short); return false }
     return true
   }
 
   async function uploadEvidence(): Promise<string[]> {
     if (!evidenceFiles.length) return []
-    const supabase = createClient()
     const urls: string[] = []
     for (const f of evidenceFiles) {
-      const { data } = await supabase.storage.from('ncr-evidence').upload(`${Date.now()}-${f.name}`, f)
-      if (data) urls.push(data.path)
+      const formData = new FormData()
+      formData.set('type', 'evidence')
+      formData.set('ncr_id', ncr.id)
+      formData.set('file', f)
+      const response = await fetch('/api/ncr/uploads', { method: 'POST', body: formData })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error ?? 'Không thể tải bằng chứng lên')
+      urls.push(data.path)
     }
     return urls
   }
@@ -125,7 +131,7 @@ export default function NcrActions({ ncr, user, qaUsers }: Props) {
 
       {/* ASSIGN MODAL */}
       {modal === 'assign' && (
-        <Modal title="Phân công xử lý NCR" onClose={() => setModal(null)}>
+        <Modal title="Phân công xử lý" onClose={() => setModal(null)}>
           <div className="space-y-3">
             <div>
               <label className="label">Người phụ trách *</label>
@@ -201,10 +207,16 @@ export default function NcrActions({ ncr, user, qaUsers }: Props) {
             </div>
           </div>
           <ModalFooter loading={loading} onCancel={() => setModal(null)} onConfirm={async () => {
-            setLoading(true)
-            const evidence_urls = await uploadEvidence()
-            setLoading(false)
-            if (await post(`/api/ncr/${ncr.id}/submit-evidence`, { implementation_notes: implNotes, evidence_urls })) refresh()
+            try {
+              setLoading(true)
+              setError('')
+              const evidence_urls = await uploadEvidence()
+              setLoading(false)
+              if (await post(`/api/ncr/${ncr.id}/submit-evidence`, { implementation_notes: implNotes, evidence_urls })) refresh()
+            } catch (uploadError) {
+              setLoading(false)
+              setError(uploadError instanceof Error ? uploadError.message : 'Không thể tải bằng chứng lên')
+            }
           }} label="Gửi báo cáo" />
         </Modal>
       )}
@@ -236,9 +248,9 @@ export default function NcrActions({ ncr, user, qaUsers }: Props) {
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">{title}</h2>
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+        <h2 className="text-base font-bold text-gray-900 mb-4">{title}</h2>
         <div className="space-y-3">{children}</div>
       </div>
     </div>
@@ -250,8 +262,8 @@ function ModalFooter({ loading, onCancel, onConfirm, label, confirmClass = 'btn-
 }) {
   return (
     <div className="flex gap-3 mt-6">
-      <button onClick={onCancel} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50">Hủy</button>
-      <button onClick={onConfirm} disabled={loading} className={`flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 ${confirmClass}`}>
+      <button onClick={onCancel} className="flex-1 btn-secondary">Hủy</button>
+      <button onClick={onConfirm} disabled={loading} className={`flex-1 ${confirmClass}`}>
         {loading && <Loader2 size={14} className="animate-spin" />}{label}
       </button>
     </div>

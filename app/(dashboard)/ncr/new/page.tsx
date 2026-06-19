@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ChevronLeft, Loader2, Upload } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ISO_CLAUSES, SEVERITY_LABELS } from '@/lib/ncr'
+import { vi } from '@/lib/i18n/vi'
 
 export default function NewNcrPage() {
   const router = useRouter()
@@ -29,12 +30,15 @@ export default function NewNcrPage() {
 
   async function uploadPhotos(): Promise<string[]> {
     if (photos.length === 0) return []
-    const supabase = createClient()
     const urls: string[] = []
     for (const file of photos) {
-      const path = `${Date.now()}-${file.name}`
-      const { data } = await supabase.storage.from('ncr-photos').upload(path, file)
-      if (data) urls.push(data.path)
+      const formData = new FormData()
+      formData.set('type', 'photo')
+      formData.set('file', file)
+      const response = await fetch('/api/ncr/uploads', { method: 'POST', body: formData })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error ?? 'Không thể tải ảnh lên')
+      urls.push(data.path)
     }
     return urls
   }
@@ -46,25 +50,30 @@ export default function NewNcrPage() {
     if (!description.trim()) { setError('Vui lòng mô tả sự không phù hợp'); return }
     if (!departmentId) { setError('Vui lòng chọn bộ phận'); return }
     if (['major', 'critical'].includes(severity) && photos.length === 0) {
-      setError('NCR mức độ lớn/nghiêm trọng phải có ảnh bằng chứng')
+      setError('Vấn đề mức độ lớn/nghiêm trọng phải có ảnh bằng chứng')
       return
     }
 
-    setUploading(true)
-    const photo_urls = await uploadPhotos()
-    setUploading(false)
-    setSaving(true)
+    try {
+      setUploading(true)
+      const photo_urls = await uploadPhotos()
+      setUploading(false)
+      setSaving(true)
 
-    const res = await fetch('/api/ncr', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ description, department_id: departmentId, iso_clause: isoClause || null, severity, reporter_name: reporterName || null, photo_urls }),
-    })
-    const data = await res.json()
-    setSaving(false)
-
-    if (!res.ok) { setError(data.error ?? 'Đã xảy ra lỗi'); return }
-    router.push('/ncr')
+      const res = await fetch('/api/ncr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description, department_id: departmentId, iso_clause: isoClause || null, severity, reporter_name: reporterName || null, photo_urls }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? vi.error_generic_short)
+      router.push('/ncr')
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : vi.error_generic_short)
+    } finally {
+      setUploading(false)
+      setSaving(false)
+    }
   }
 
   const loading = uploading || saving
@@ -73,7 +82,7 @@ export default function NewNcrPage() {
     <div className="max-w-2xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
         <Link href="/ncr" className="text-gray-400 hover:text-gray-600"><ChevronLeft size={20} /></Link>
-        <h1 className="text-xl font-bold text-gray-900">Tạo NCR mới</h1>
+        <h1 className="text-xl font-bold text-gray-900">Tạo vấn đề mới</h1>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -186,7 +195,7 @@ export default function NewNcrPage() {
             className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
             {loading && <Loader2 size={15} className="animate-spin" />}
-            {uploading ? 'Đang tải ảnh...' : saving ? 'Đang lưu...' : 'Tạo NCR'}
+            {uploading ? 'Đang tải ảnh...' : saving ? 'Đang lưu...' : 'Tạo vấn đề'}
           </button>
         </div>
       </form>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createNotification } from '@/lib/notifications'
+import { canApproveQualityRecord } from '@/lib/roles'
 
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
   const supabase = createClient()
@@ -8,9 +9,13 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'qa_manager') return NextResponse.json({ error: 'Chỉ Quản lý QA mới có thể phê duyệt' }, { status: 403 })
+  if (!canApproveQualityRecord(profile?.role)) return NextResponse.json({ error: 'Không có quyền phê duyệt' }, { status: 403 })
 
-  const { data: ncr } = await supabase.from('ncrs').select('*').eq('id', params.id).single()
+  const { data: ncr } = await supabase
+    .from('ncrs')
+    .select('status, assigned_to, ncr_code')
+    .eq('id', params.id)
+    .single()
   if (!ncr) return NextResponse.json({ error: 'Không tìm thấy NCR' }, { status: 404 })
   if (ncr.status !== 'pending_capa_approval') return NextResponse.json({ error: 'NCR không ở trạng thái chờ duyệt CAPA' }, { status: 400 })
 

@@ -1,21 +1,36 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createNotification } from '@/lib/notifications'
+import { canApproveQualityRecord } from '@/lib/roles'
 
 // POST /api/documents/[id]/approve
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(_request: Request, { params }: { params: { id: string } }) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'qa_manager') return NextResponse.json({ error: 'Chỉ Quản lý QA mới có thể phê duyệt' }, { status: 403 })
+  if (!canApproveQualityRecord(profile?.role)) return NextResponse.json({ error: 'Không có quyền phê duyệt' }, { status: 403 })
 
-  const { data: doc } = await supabase.from('documents').select('*').eq('id', params.id).single()
+  const { data: doc } = await supabase
+    .from('documents')
+    .select('status, previous_version_id, revision_type, owner_id, title, doc_code')
+    .eq('id', params.id)
+    .single()
   if (!doc) return NextResponse.json({ error: 'Không tìm thấy tài liệu' }, { status: 404 })
   if (doc.status !== 'pending_approval') return NextResponse.json({ error: 'Tài liệu không ở trạng thái chờ phê duyệt' }, { status: 400 })
 
-  const { revision_type, factory_id, department_id } = await request.json()
+  if (doc.previous_version_id) {
+    const { error: archiveError } = await supabase
+      .from('documents')
+      .update({ status: 'archived' })
+      .eq('id', doc.previous_version_id)
+      .eq('status', 'published')
+
+    if (archiveError) {
+      return NextResponse.json({ error: 'Không thể lưu trữ phiên bản trước' }, { status: 500 })
+    }
+  }
 
   const { error } = await supabase
     .from('documents')
@@ -23,19 +38,19 @@ export async function POST(request: Request, { params }: { params: { id: string 
       status: 'published',
       approved_by: user.id,
       approved_at: new Date().toISOString(),
-      revision_type: revision_type ?? 'minor',
+      revision_type: doc.revision_type,
     })
     .eq('id', params.id)
 
-  if (error) return NextResponse.json({ error: 'Không thể phê duyệt tài liệu' }, { status: 500 })
-
-  // Save assignment
-  await supabase.from('document_assignments').insert({
-    document_id: params.id,
-    factory_id: factory_id ?? null,
-    department_id: department_id ?? null,
-    assigned_by: user.id,
-  })
+  if (error) {
+    if (doc.previous_version_id) {
+      await supabase
+        .from('documents')
+        .update({ status: 'published' })
+        .eq('id', doc.previous_version_id)
+    }
+    return NextResponse.json({ error: 'Không thể phê duyệt tài liệu' }, { status: 500 })
+  }
 
   // Notify owner
   await createNotification(

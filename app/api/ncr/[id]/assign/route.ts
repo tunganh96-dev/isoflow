@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createNotification } from '@/lib/notifications'
+import { canApproveQualityRecord } from '@/lib/roles'
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const supabase = createClient()
@@ -8,16 +9,20 @@ export async function POST(request: Request, { params }: { params: { id: string 
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'qa_manager') {
-    return NextResponse.json({ error: 'Chỉ Quản lý QA mới có thể phân công' }, { status: 403 })
+  if (!canApproveQualityRecord(profile?.role)) {
+    return NextResponse.json({ error: 'Không có quyền phân công' }, { status: 403 })
   }
 
-  const { assigned_to, due_date } = await request.json()
+  const { assigned_to, due_date } = await request.json().catch(() => ({}))
   if (!assigned_to || !due_date) {
     return NextResponse.json({ error: 'Vui lòng chọn người phụ trách và hạn xử lý' }, { status: 400 })
   }
 
-  const { data: ncr } = await supabase.from('ncrs').select('*').eq('id', params.id).single()
+  const { data: ncr } = await supabase
+    .from('ncrs')
+    .select('status, ncr_code, description')
+    .eq('id', params.id)
+    .single()
   if (!ncr) return NextResponse.json({ error: 'Không tìm thấy NCR' }, { status: 404 })
   if (ncr.status !== 'open') return NextResponse.json({ error: 'NCR không ở trạng thái Mới mở' }, { status: 400 })
 

@@ -2,11 +2,14 @@ import Anthropic from '@anthropic-ai/sdk'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { DOC_TYPE_LABELS } from '@/lib/documents'
+import { ANTHROPIC_MODEL } from '@/lib/anthropic'
+import { getActiveDocumentTemplate, templatePrompt } from '@/lib/document-templates'
+import { normalizeDocumentMarkdown } from '@/lib/markdown'
 
 const client = new Anthropic()
 
 const DOC_PROMPTS: Record<string, string> = {
-  sop: `Bạn là chuyên gia hệ thống quản lý chất lượng ISO 9001 cho nhà máy sản xuất tại Việt Nam.
+  sop: `Bạn là chuyên gia hệ thống quản lý chất lượng ISO 9001 cho công ty sản xuất tại Việt Nam.
 Hãy tạo một Quy trình (SOP) chuẩn ISO 9001:2015 với cấu trúc:
 1. Mục đích
 2. Phạm vi áp dụng
@@ -18,7 +21,7 @@ Hãy tạo một Quy trình (SOP) chuẩn ISO 9001:2015 với cấu trúc:
 Ngôn ngữ chuyên nghiệp, rõ ràng. Chỉ trả về nội dung tài liệu.
 Trả lời bằng tiếng Việt có đầy đủ dấu.`,
 
-  work_instruction: `Bạn là chuyên gia ISO 9001 cho nhà máy sản xuất tại Việt Nam.
+  work_instruction: `Bạn là chuyên gia ISO 9001 cho công ty sản xuất tại Việt Nam.
 Hãy tạo một Hướng dẫn công việc chi tiết với cấu trúc:
 1. Mục đích
 2. Phạm vi áp dụng
@@ -30,14 +33,14 @@ Hãy tạo một Hướng dẫn công việc chi tiết với cấu trúc:
 Ngôn ngữ đơn giản, dễ hiểu cho công nhân. Chỉ trả về nội dung tài liệu.
 Trả lời bằng tiếng Việt có đầy đủ dấu.`,
 
-  quality_policy: `Bạn là chuyên gia ISO 9001 cho nhà máy sản xuất tại Việt Nam.
+  quality_policy: `Bạn là chuyên gia ISO 9001 cho công ty sản xuất tại Việt Nam.
 Hãy tạo một Chính sách chất lượng chuẩn ISO 9001:2015 với cấu trúc:
 1. Tuyên bố chính sách
 2. Mục tiêu chất lượng
 3. Cam kết của lãnh đạo
 4. Phạm vi áp dụng
 5. Trách nhiệm thực hiện
-Ngôn ngữ trang trọng, phù hợp để trình bày tại nhà máy. Chỉ trả về nội dung tài liệu.
+Ngôn ngữ trang trọng, phù hợp để áp dụng toàn công ty. Chỉ trả về nội dung tài liệu.
 Trả lời bằng tiếng Việt có đầy đủ dấu.`,
 
   audit_checklist: `Bạn là chuyên gia kiểm toán ISO 9001 tại Việt Nam.
@@ -53,12 +56,12 @@ Chỉ trả về nội dung tài liệu. Trả lời bằng tiếng Việt có �
 Hãy tạo một Sổ đăng ký rủi ro theo ISO 9001:2015 với cấu trúc:
 1. Hướng dẫn sử dụng
 2. Bảng nhận diện rủi ro (STT | Rủi ro | Nguyên nhân | Mức độ | Hành động kiểm soát | Người chịu trách nhiệm)
-3. Ít nhất 5-8 rủi ro điển hình cho nhà máy sản xuất
+3. Ít nhất 5-8 rủi ro điển hình cho công ty sản xuất
 4. Thang đánh giá mức độ rủi ro
 Chỉ trả về nội dung tài liệu. Trả lời bằng tiếng Việt có đầy đủ dấu.`,
 }
 
-const DEFAULT_PROMPT = `Bạn là chuyên gia hệ thống quản lý chất lượng ISO 9001 cho nhà máy sản xuất tại Việt Nam.
+const DEFAULT_PROMPT = `Bạn là chuyên gia hệ thống quản lý chất lượng ISO 9001 cho công ty sản xuất tại Việt Nam.
 Hãy tạo tài liệu ISO 9001:2015 phù hợp với mô tả sau. Cấu trúc rõ ràng, chuyên nghiệp.
 Chỉ trả về nội dung tài liệu. Trả lời bằng tiếng Việt có đầy đủ dấu.`
 
@@ -67,7 +70,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { title, doc_type, description, factory_name } = await request.json()
+  const { title, doc_type, description } = await request.json().catch(() => ({}))
 
   if (!title || !doc_type) {
     return NextResponse.json({ error: 'Thiếu thông tin bắt buộc' }, { status: 400 })
@@ -75,29 +78,29 @@ export async function POST(request: Request) {
 
   const systemPrompt = DOC_PROMPTS[doc_type] ?? DEFAULT_PROMPT
   const docTypeLabel = DOC_TYPE_LABELS[doc_type] ?? doc_type
-  const factoryNote = factory_name ? ` tại nhà máy ${factory_name}` : ''
+  const template = await getActiveDocumentTemplate(supabase, doc_type)
 
   try {
     // Generate document content
     const contentMsg = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: ANTHROPIC_MODEL,
       max_tokens: 2000,
-      system: systemPrompt,
+      system: `${systemPrompt}${templatePrompt(template)}`,
       messages: [
         {
           role: 'user',
-          content: `Tên tài liệu: ${title}\nLoại: ${docTypeLabel}${factoryNote}\nMô tả: ${description || 'Tạo tài liệu chuẩn ISO 9001'}`,
+          content: `Tên tài liệu: ${title}\nLoại: ${docTypeLabel}\nPhạm vi: áp dụng toàn công ty; nếu chọn bộ phận thì chỉ dùng bộ phận đó làm đơn vị chịu trách nhiệm.\nMô tả: ${description || 'Tạo tài liệu chuẩn ISO 9001'}`,
         },
       ],
     })
 
-    const content = contentMsg.content[0].type === 'text' ? contentMsg.content[0].text : ''
+    const content = normalizeDocumentMarkdown(contentMsg.content[0].type === 'text' ? contentMsg.content[0].text : '')
 
     // Generate Mermaid flowchart for SOP and work_instruction
     let mermaid_code: string | null = null
     if (['sop', 'work_instruction'].includes(doc_type)) {
       const flowMsg = await client.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: ANTHROPIC_MODEL,
         max_tokens: 500,
         system: `Bạn là chuyên gia ISO 9001. Từ các bước quy trình dưới đây, hãy tạo Mermaid flowchart diagram code.
 Sử dụng: flowchart TD
@@ -114,7 +117,7 @@ Trả lời bằng tiếng Việt có đầy đủ dấu.`,
 
     return NextResponse.json({ content, mermaid_code })
   } catch (err) {
-    console.error('Claude generation error:', err)
+    console.error('Claude generation error:')
     return NextResponse.json({ error: 'Không thể tạo nội dung. Vui lòng thử lại.' }, { status: 500 })
   }
 }

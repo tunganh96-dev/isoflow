@@ -33,7 +33,8 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   if (department_id !== undefined) updates.department_id = department_id
   if (job_position_id !== undefined) updates.job_position_id = job_position_id
 
-  const { error } = await supabase
+  const admin = createAdminClient()
+  const { error } = await admin
     .from('users')
     .update(updates)
     .eq('id', params.id)
